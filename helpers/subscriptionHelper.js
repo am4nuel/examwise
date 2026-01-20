@@ -48,7 +48,7 @@ async function populateSubscriptionDetails(subscriptions) {
             }
           } else if (itemJson.itemType === 'video') {
             itemDetails = await Video.findByPk(itemJson.itemId, {
-              attributes: ['id', 'title', 'description', 'url', 'duration', 'thumbnailUrl']
+              attributes: ['id', 'title', 'description', 'url']
             });
           }
 
@@ -91,7 +91,7 @@ async function populateSubscriptionDetails(subscriptions) {
         }
       } else if (subJson.itemType === 'video') {
         itemDetails = await Video.findByPk(subJson.itemId, {
-          attributes: ['id', 'title', 'description', 'url', 'duration', 'thumbnailUrl']
+          attributes: ['id', 'title', 'description', 'url']
         });
       }
       subJson.itemDetails = itemDetails ? (itemDetails.toJSON ? itemDetails.toJSON() : itemDetails) : null;
