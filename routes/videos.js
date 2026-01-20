@@ -1,0 +1,118 @@
+const express = require('express');
+const router = express.Router();
+const { Video, Course, Topic, sequelize } = require('../models');
+const auth = require('../middleware/auth');
+
+// Get all videos with filters
+router.get('/', async (req, res) => {
+  try {
+    const { courseId, departmentId, fieldId, topicId, search } = req.query;
+    const where = {};
+    
+    if (courseId) where.courseId = courseId;
+    if (topicId) where.topicId = topicId;
+    
+    if (search) {
+      where.title = { [require('sequelize').Op.like]: `%${search}%` };
+    }
+
+    const include = [
+      { 
+        model: Course, 
+        as: 'course', 
+        attributes: ['name', 'fieldId'],
+        required: !!(departmentId || fieldId)
+      },
+      { model: Topic, as: 'topic', attributes: ['name'] }
+    ];
+
+    if (departmentId || fieldId) {
+      const fieldWhere = {};
+      if (departmentId) fieldWhere.departmentId = departmentId;
+      if (fieldId) fieldWhere.id = fieldId;
+
+      include[0].include = [
+        {
+          model: require('../models').Field,
+          as: 'field',
+          where: fieldWhere,
+          required: true
+        }
+      ];
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = req.query.offset ? parseInt(req.query.offset) : (page - 1) * limit;
+
+    const { count, rows } = await Video.findAndCountAll({
+      where,
+      include,
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset,
+    });
+    
+    res.json({
+      data: rows,
+      total: count,
+      pages: Math.ceil(count / limit),
+      currentPage: page
+    });
+  } catch (error) {
+    console.error('Fetch videos error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Create video
+router.post('/', auth, async (req, res) => {
+  try {
+    const { title, description, url, courseId, topicId, isFree, price } = req.body;
+    
+    const video = await Video.create({
+      title,
+      description,
+      url,
+      courseId: courseId || null,
+      topicId: topicId || null,
+      isFree: isFree || false,
+      price: price || 0
+    });
+
+    res.status(201).json(video);
+  } catch (error) {
+    console.error('Create video error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Update video
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const video = await Video.findByPk(req.params.id);
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    await video.update(req.body);
+    res.json(video);
+  } catch (error) {
+    console.error('Update video error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Delete video
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const video = await Video.findByPk(req.params.id);
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    await video.destroy();
+    res.json({ message: 'Video deleted successfully' });
+  } catch (error) {
+    console.error('Delete video error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+module.exports = router;
