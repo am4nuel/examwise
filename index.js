@@ -139,6 +139,10 @@ const startServer = async () => {
       try { await db.sequelize.query("ALTER TABLE `subscriptions` MODIFY COLUMN `itemType` ENUM('exam', 'note', 'file', 'video') NULL;"); } catch(e) {}
       console.log('✓ Ensured transaction/subscription itemType allows video.');
       
+      // Add content column to videos table
+      try { await db.sequelize.query('ALTER TABLE `videos` ADD COLUMN `content` TEXT NULL;'); } catch(e) {}
+      console.log('✓ Ensured videos table has content column.');
+      
       // Force add new User columns (ignore error if they exist)
       try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `email` VARCHAR(255) NULL;'); } catch(e) {}
       try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `fieldId` INTEGER NULL;'); } catch(e) {}

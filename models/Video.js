@@ -13,6 +13,11 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    content: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+      comment: 'Rich text content for the video (markdown/HTML/LaTeX)'
+    },
     url: {
       type: DataTypes.STRING,
       allowNull: false,
