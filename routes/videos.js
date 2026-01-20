@@ -68,12 +68,13 @@ router.get('/', async (req, res) => {
 // Create video
 router.post('/', auth, async (req, res) => {
   try {
-    const { title, description, url, courseId, topicId, isFree, price } = req.body;
+    const { title, description, url, courseId, topicId, isFree, price, content } = req.body;
     
     const video = await Video.create({
       title,
       description,
       url,
+      content,
       courseId: courseId || null,
       topicId: topicId || null,
       isFree: isFree || false,
