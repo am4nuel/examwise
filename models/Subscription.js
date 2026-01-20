@@ -22,7 +22,7 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     itemType: {
-      type: DataTypes.ENUM('exam', 'note', 'file'),
+      type: DataTypes.ENUM('exam', 'note', 'file', 'video'),
       allowNull: true
     },
     itemId: {

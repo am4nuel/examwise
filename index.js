@@ -134,6 +134,11 @@ const startServer = async () => {
       await db.sequelize.query('ALTER TABLE `transactions` MODIFY COLUMN `userId` INTEGER NULL;');
       console.log('✓ Ensured transactions.userId is nullable.');
       
+      // Update ENUMs for videos
+      try { await db.sequelize.query("ALTER TABLE `transactions` MODIFY COLUMN `itemType` ENUM('exam', 'note', 'file', 'video') NULL;"); } catch(e) {}
+      try { await db.sequelize.query("ALTER TABLE `subscriptions` MODIFY COLUMN `itemType` ENUM('exam', 'note', 'file', 'video') NULL;"); } catch(e) {}
+      console.log('✓ Ensured transaction/subscription itemType allows video.');
+      
       // Force add new User columns (ignore error if they exist)
       try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `email` VARCHAR(255) NULL;'); } catch(e) {}
       try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `fieldId` INTEGER NULL;'); } catch(e) {}

@@ -27,7 +27,7 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: 'deposit'
     },
     itemType: {
-      type: DataTypes.ENUM('exam', 'note', 'file'),
+      type: DataTypes.ENUM('exam', 'note', 'file', 'video'),
       allowNull: true
     },
     itemId: {
