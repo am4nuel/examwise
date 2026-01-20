@@ -1,4 +1,4 @@
-const { Subscription, Package, PackageItem, Exam, ShortNote, File, Question, Choice } = require('../models');
+const { Subscription, Package, PackageItem, Exam, ShortNote, File, Video, Question, Choice } = require('../models');
 
 // Helper to populate items with their respective details
 async function populateSubscriptionDetails(subscriptions) {
@@ -46,6 +46,10 @@ async function populateSubscriptionDetails(subscriptions) {
                 fileUrl: file.filePath
               };
             }
+          } else if (itemJson.itemType === 'video') {
+            itemDetails = await Video.findByPk(itemJson.itemId, {
+              attributes: ['id', 'title', 'description', 'url', 'duration', 'thumbnailUrl']
+            });
           }
 
           return {
@@ -85,6 +89,10 @@ async function populateSubscriptionDetails(subscriptions) {
             fileUrl: file.filePath
           };
         }
+      } else if (subJson.itemType === 'video') {
+        itemDetails = await Video.findByPk(subJson.itemId, {
+          attributes: ['id', 'title', 'description', 'url', 'duration', 'thumbnailUrl']
+        });
       }
       subJson.itemDetails = itemDetails ? (itemDetails.toJSON ? itemDetails.toJSON() : itemDetails) : null;
     }
