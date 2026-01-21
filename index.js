@@ -39,7 +39,16 @@ app.use(cors({
 }));
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
-app.use('/uploads', express.static(uploadsDir));
+app.use('/uploads', express.static(uploadsDir, {
+  setHeaders: (res, filePath) => {
+    if (filePath.toLowerCase().endsWith('.pdf')) {
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', 'inline');
+    } else {
+      res.set('Content-Disposition', 'inline');
+    }
+  }
+}));
 
 
 // Routes
@@ -48,6 +57,7 @@ const courseRoutes = require('./routes/courses');
 const examRoutes = require('./routes/exams');
 const questionRoutes = require('./routes/questions');
 const choiceRoutes = require('./routes/choices');
+const topicRoutes = require('./routes/topics');
 const fileRoutes = require('./routes/files');
 const userRoutes = require('./routes/users');
 const shortNoteRoutes = require('./routes/shortNotes');
@@ -67,6 +77,7 @@ app.use('/api/courses', courseRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/choices', choiceRoutes);
+app.use('/api/topics', topicRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/short-notes', shortNoteRoutes);
@@ -144,20 +155,26 @@ const startServer = async () => {
       console.log('✓ Ensured videos table has content column.');
       
       // Force add new User columns (ignore error if they exist)
-      try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `email` VARCHAR(255) NULL;'); } catch(e) {}
       try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `fieldId` INTEGER NULL;'); } catch(e) {}
       console.log('✓ Ensured users table has email and fieldId columns.');
+
+      // Fix charset for short_notes to support emojis/special chars
+      try { 
+        await db.sequelize.query('ALTER TABLE `short_notes` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+        await db.sequelize.query('ALTER TABLE `short_notes` MODIFY `content` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+        console.log('✓ Ensured short_notes table supports utf8mb4.');
+      } catch(e) { console.log('Note: Could not alter short_notes charset (might already be set or permission denied).'); }
 
     } catch (e) {
       // Ignore main errors
     }
     
-    // Seed dummy data
-    await notificationSeeder();
-    await require('./price_seeder')();
-    await adminSeeder();
-    await universitySeeder(); // Added call to universitySeeder
-    await topicSeeder(); // New call
+    // Seed dummy data (Disabled by default)
+    // await notificationSeeder();
+    // await require('./price_seeder')();
+    // await adminSeeder();
+    // await universitySeeder(); 
+    // await topicSeeder();
 
     // Start server
     const server = app.listen(PORT, () => {

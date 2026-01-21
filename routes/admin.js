@@ -13,6 +13,18 @@ const PaymentService = require('../services/payment_service');
 const NotificationService = require('../services/notification_service');
 const FirebaseService = require('../services/FirebaseService');
 
+// Helper to sanitize ID fields (convert empty strings to null)
+const sanitizeIdFields = (data) => {
+  const fields = ['courseId', 'universityId', 'topicId', 'fieldId', 'departmentId', 'examId'];
+  const sanitized = { ...data };
+  fields.forEach(field => {
+    if (sanitized[field] === '') {
+      sanitized[field] = null;
+    }
+  });
+  return sanitized;
+};
+
 // Admin Login
 router.post('/login', async (req, res) => {
   try {
@@ -959,12 +971,7 @@ router.get('/exams', async (req, res) => {
         { model: Course, as: 'course', attributes: ['name'] },
         { model: University, as: 'university', attributes: ['name'] },
         { model: Department, as: 'department', attributes: ['name'] },
-        { model: Field, as: 'field', attributes: ['name'] },
-        {
-          model: Question,
-          as: 'questions',
-          include: [{ model: Choice, as: 'choices' }]
-        }
+        { model: Field, as: 'field', attributes: ['name'] }
       ],
       order: [['createdAt', 'DESC']],
       distinct: true
@@ -981,9 +988,33 @@ router.get('/exams', async (req, res) => {
   }
 });
 
+router.get('/exams/:id', async (req, res) => {
+  try {
+    const exam = await Exam.findByPk(req.params.id, {
+      include: [
+        { model: Course, as: 'course', attributes: ['id', 'name'] },
+        { model: University, as: 'university', attributes: ['id', 'name'] },
+        { model: Department, as: 'department', attributes: ['id', 'name'] },
+        { model: Field, as: 'field', attributes: ['id', 'name'] },
+        { model: Topic, as: 'topic', attributes: ['id', 'name'] },
+        {
+          model: Question,
+          as: 'questions',
+          include: [{ model: Choice, as: 'choices' }]
+        }
+      ]
+    });
+    if (!exam) return res.status(404).json({ message: 'Exam not found' });
+    res.json(exam);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching exam details' });
+  }
+});
+
 router.post('/exams', async (req, res) => {
   try {
-    const exam = await Exam.create(req.body, {
+    const payload = sanitizeIdFields(req.body);
+    const exam = await Exam.create(payload, {
       include: [
         {
           model: Question,
@@ -1004,7 +1035,8 @@ router.put('/exams/:id', async (req, res) => {
     const exam = await Exam.findByPk(req.params.id);
     if (!exam) return res.status(404).json({ message: 'Exam not found' });
     
-    await exam.update(req.body, { transaction });
+    const payload = sanitizeIdFields(req.body);
+    await exam.update(payload, { transaction });
 
     // If questions are provided, rebuild them using bulk operations for performance
     if (req.body.questions) {
@@ -1206,7 +1238,8 @@ router.get('/files', async (req, res) => {
 
 router.post('/files', async (req, res) => {
   try {
-    const file = await File.create(req.body);
+    const payload = sanitizeIdFields(req.body);
+    const file = await File.create(payload);
     res.status(201).json(file);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -1217,7 +1250,8 @@ router.put('/files/:id', async (req, res) => {
   try {
     const file = await File.findByPk(req.params.id);
     if (!file) return res.status(404).json({ message: 'File not found' });
-    await file.update(req.body);
+    const payload = sanitizeIdFields(req.body);
+    await file.update(payload);
     res.json(file);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -1265,7 +1299,8 @@ router.get('/short-notes', async (req, res) => {
 
 router.post('/short-notes', async (req, res) => {
   try {
-    const note = await ShortNote.create(req.body);
+    const payload = sanitizeIdFields(req.body);
+    const note = await ShortNote.create(payload);
     res.status(201).json(note);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -1276,7 +1311,8 @@ router.put('/short-notes/:id', async (req, res) => {
   try {
     const note = await ShortNote.findByPk(req.params.id);
     if (!note) return res.status(404).json({ message: 'Note not found' });
-    await note.update(req.body);
+    const payload = sanitizeIdFields(req.body);
+    await note.update(payload);
     res.json(note);
   } catch (error) {
     res.status(400).json({ message: error.message });
