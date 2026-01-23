@@ -4,7 +4,7 @@ const { Department, Course } = require('../models');
 const auth = require('../middleware/auth');
 
 // GET all departments
-router.get('/', auth, async (req, res) => {
+router.get('/', async (req, res) => {
 
   try {
     const departments = await Department.findAll();
@@ -15,7 +15,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // GET a single department
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const department = await Department.findByPk(req.params.id, {
       include: [{ model: Course, as: 'courses' }]

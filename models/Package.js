@@ -45,6 +45,14 @@ module.exports = (sequelize, DataTypes) => {
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true
+    },
+    packageTypeId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'package_types',
+        key: 'id'
+      }
     }
   }, {
     tableName: 'packages',
@@ -58,6 +66,10 @@ module.exports = (sequelize, DataTypes) => {
       {
         fields: ['departmentId'],
         name: 'idx_package_department'
+      },
+      {
+        fields: ['packageTypeId'],
+        name: 'idx_package_type'
       }
     ]
   });
@@ -67,6 +79,11 @@ module.exports = (sequelize, DataTypes) => {
     Package.belongsTo(models.Department, {
       foreignKey: 'departmentId',
       as: 'department'
+    });
+    
+    Package.belongsTo(models.PackageType, {
+      foreignKey: 'packageTypeId',
+      as: 'packageType'
     });
 
     // Package belongs to a course

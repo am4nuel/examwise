@@ -4,7 +4,7 @@ const { Course, Department, Exam, File } = require('../models');
 const auth = require('../middleware/auth');
 
 // GET all courses
-router.get('/', auth, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { fieldId } = req.query;
     const where = {};
@@ -26,7 +26,7 @@ router.get('/', auth, async (req, res) => {
 });
 
 // GET a single course
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
     const course = await Course.findByPk(req.params.id, {
       include: [

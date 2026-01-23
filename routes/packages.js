@@ -1,16 +1,23 @@
 const express = require('express');
 const router = express.Router();
-const { Package, PackageItem, Department, Course, Exam, ShortNote, File, Video, Question, Choice, Subscription, sequelize } = require('../models');
+const { Package, PackageItem, Department, Course, Exam, ShortNote, File, Video, Question, Choice, Subscription, PackageType, sequelize } = require('../models');
 const auth = require('../middleware/auth');
 const optionalAuth = require('../middleware/optionalAuth');
 
 // Get all active packages with dynamic pricing based on user subscriptions
 router.get('/', optionalAuth, async (req, res) => {
   try {
+    const { packageTypeId } = req.query;
+    const where = { isActive: true };
+    if (packageTypeId) {
+      where.packageTypeId = packageTypeId;
+    }
+
     const packages = await Package.findAll({
-      where: { isActive: true },
+      where,
       include: [
         { model: Department, as: 'department', attributes: ['name', 'code'] },
+        { model: PackageType, as: 'packageType', attributes: ['name', 'code'] },
         { model: Course, as: 'course', attributes: ['name', 'fieldId'] },
         { model: PackageItem, as: 'items', attributes: ['id', 'itemType', 'itemId', 'price', 'isStandalone', 'isFree'] }
       ],
@@ -152,55 +159,56 @@ router.get('/:id', optionalAuth, async (req, res) => {
     const isPackageOwned = ownedPackageIds.has(package.id);
 
     const limitItems = req.query.limitItems === 'true';
-    const itemsByType = { exam: 0, note: 0, file: 0, video: 0 };
+    const itemsByType = { exam: [], note: [], file: [], video: [] };
 
-    // Fetch actual item details for each package item
-    const itemsWithDetails = await Promise.all(
-      package.items.map(async (item) => {
-        // If limitItems is true, skip if we already have 3 of this type
-        if (limitItems && itemsByType[item.itemType] >= 3) {
-          return null;
+    // Group items by type to perform bulk fetches
+    package.items.forEach(item => {
+      if (itemsByType[item.itemType]) {
+        // If limitItems is true, only collect first 3 of each type
+        if (!limitItems || itemsByType[item.itemType].length < 3) {
+          itemsByType[item.itemType].push(item.itemId);
         }
+      }
+    });
 
-        let itemDetails = null;
-        if (item.itemType === 'exam') {
-          itemDetails = await Exam.findByPk(item.itemId, {
-            include: [{
-              model: Question,
-              as: 'questions',
-              limit: 2,
-              separate: true,
-              include: [{
-                model: Choice,
-                as: 'choices'
-              }]
-            }]
-          });
-        } else if (item.itemType === 'note') {
-          itemDetails = await ShortNote.findByPk(item.itemId);
-        } else if (item.itemType === 'file') {
-          itemDetails = await File.findByPk(item.itemId);
-        } else if (item.itemType === 'video') {
-          itemDetails = await Video.findByPk(item.itemId);
-        }
+    // Bulk fetch details for each type
+    const [exams, notes, files, videos] = await Promise.all([
+      itemsByType.exam.length > 0 ? Exam.findAll({
+        where: { id: itemsByType.exam },
+        include: [{
+          model: Question,
+          as: 'questions',
+          limit: 2,
+          separate: true,
+          include: [{ model: Choice, as: 'choices' }]
+        }]
+      }) : [],
+      itemsByType.note.length > 0 ? ShortNote.findAll({ where: { id: itemsByType.note } }) : [],
+      itemsByType.file.length > 0 ? File.findAll({ where: { id: itemsByType.file } }) : [],
+      itemsByType.video.length > 0 ? Video.findAll({ where: { id: itemsByType.video } }) : []
+    ]);
 
-        if (itemDetails) {
-          itemsByType[item.itemType]++;
-        }
+    // Create lookup maps for fast access
+    const detailsMap = {
+      exam: Object.fromEntries(exams.map(i => [i.id, i])),
+      note: Object.fromEntries(notes.map(i => [i.id, i])),
+      file: Object.fromEntries(files.map(i => [i.id, i])),
+      video: Object.fromEntries(videos.map(i => [i.id, i]))
+    };
 
-        const itemJson = item.toJSON();
-        const itemKey = `${item.itemType}_${item.itemId}`;
-        itemJson.isOwned = isPackageOwned || ownedItems.has(itemKey) || item.isFree;
+    const itemsWithDetails = package.items.map(item => {
+      const details = detailsMap[item.itemType]?.[item.itemId];
+      if (limitItems && !details) return null; // If limited, only include those we fetched details for
 
-        return {
-          ...itemJson,
-          details: itemDetails
-        };
-      })
-    );
+      const itemJson = item.toJSON();
+      const itemKey = `${item.itemType}_${item.itemId}`;
+      itemJson.isOwned = isPackageOwned || ownedItems.has(itemKey) || item.isFree;
 
-    // Filter out nulls (skipped items)
-    const filteredItems = itemsWithDetails.filter(i => i !== null);
+      return {
+        ...itemJson,
+        details: details || null
+      };
+    }).filter(i => i !== null);
 
     const packageJson = package.toJSON();
     
@@ -229,7 +237,7 @@ router.get('/:id', optionalAuth, async (req, res) => {
       packageJson.price = parseFloat(package.price || 0);
     }
 
-    packageJson.items = filteredItems;
+    packageJson.items = itemsWithDetails;
     packageJson.isOwned = isPackageOwned;
 
     if (req.user && !isPackageOwned) {
@@ -260,13 +268,14 @@ router.post('/', auth, async (req, res) => {
   let transaction;
   try {
     transaction = await sequelize.transaction();
-    const { name, code, description, departmentId, courseId, price, items, isByPackagePrice } = req.body;
+    const { name, code, description, departmentId, packageTypeId, courseId, price, items, isByPackagePrice } = req.body;
 
     const package = await Package.create({
       name,
       code,
       description,
       departmentId: departmentId || null,
+      packageTypeId: packageTypeId || null,
       courseId: courseId || null,
       price: price || 0,
       isByPackagePrice: isByPackagePrice || false

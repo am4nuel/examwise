@@ -66,6 +66,7 @@ const feedbackRoutes = require('./routes/feedbacks');
 const packageRoutes = require('./routes/packages');
 const subscriptionRoutes = require('./routes/subscriptions');
 const paymentRoutes = require('./routes/payments');
+const packageTypeRoutes = require('./routes/packageTypes');
 const adminRoutes = require('./routes/admin');
 const fieldRoutes = require('./routes/fields'); // Added
 const videoRoutes = require('./routes/videos'); // Added
@@ -86,6 +87,8 @@ app.use('/api/feedbacks', feedbackRoutes);
 app.use('/api/packages', packageRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/package-types', packageTypeRoutes);
+app.use('/api/admin/package-types', packageTypeRoutes); // Alias for admin panel
 app.use('/api/admin/videos', videoRoutes); // Explicitly alias for admin panel
 app.use('/api/admin', adminRoutes);
 app.use('/api/videos', videoRoutes);
@@ -124,6 +127,30 @@ const startServer = async () => {
     await db.sequelize.authenticate();
     console.log('✓ Database connection established successfully.');
 
+    // Fail-safe: Manually ensure columns exist/are correct BEFORE alter sync
+    // This prevents "Key column 'packageTypeId' doesn't exist" errors when sync tries to add indexes
+    try {
+      // First ensure the table exists (sync might not have run yet)
+      await db.sequelize.query('CREATE TABLE IF NOT EXISTS `package_types` (`id` INTEGER PRIMARY KEY AUTO_INCREMENT, `name` VARCHAR(255) NOT NULL, `code` VARCHAR(20) NOT NULL UNIQUE, `description` TEXT, `isActive` TINYINT(1) DEFAULT 1, `createdAt` DATETIME NOT NULL, `updatedAt` DATETIME NOT NULL) ENGINE=InnoDB;');
+      
+      // Ensure packageTypeId exists in packages table
+      try { await db.sequelize.query('ALTER TABLE `packages` ADD COLUMN `packageTypeId` INTEGER NULL;'); } catch(e) {}
+      try { await db.sequelize.query('ALTER TABLE `packages` ADD CONSTRAINT `packages_packageTypeId_foreign_idx` FOREIGN KEY (`packageTypeId`) REFERENCES `package_types`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;'); } catch(e) {}
+      console.log('✓ Pre-emptively ensured packages table has packageTypeId column.');
+      
+      await db.sequelize.query('ALTER TABLE `subscriptions` MODIFY COLUMN `packageId` INTEGER NULL;');
+      await db.sequelize.query('ALTER TABLE `transactions` MODIFY COLUMN `userId` INTEGER NULL;');
+      
+      // Force add new User columns
+      try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `fieldId` INTEGER NULL;'); } catch(e) {}
+      
+      // Add content column to videos table
+      try { await db.sequelize.query('ALTER TABLE `videos` ADD COLUMN `content` TEXT NULL;'); } catch(e) {}
+
+    } catch (e) {
+      console.log('Note: Some pre-sync migrations skipped or already applied.');
+    }
+
     // Sync all models
     try {
       console.log('Synchronizing database models...');
@@ -137,37 +164,13 @@ const startServer = async () => {
       console.error('Attempting to proceed without alter sync...');
       await db.sequelize.sync(); 
     }
-    
-    // Fail-safe: Manually ensure columns exist/are correct if sync didn't do it
-    try {
-      await db.sequelize.query('ALTER TABLE `subscriptions` MODIFY COLUMN `packageId` INTEGER NULL;');
-      console.log('✓ Ensured packageId is nullable.');
-      await db.sequelize.query('ALTER TABLE `transactions` MODIFY COLUMN `userId` INTEGER NULL;');
-      console.log('✓ Ensured transactions.userId is nullable.');
-      
-      // Update ENUMs for videos
-      try { await db.sequelize.query("ALTER TABLE `transactions` MODIFY COLUMN `itemType` ENUM('exam', 'note', 'file', 'video') NULL;"); } catch(e) {}
-      try { await db.sequelize.query("ALTER TABLE `subscriptions` MODIFY COLUMN `itemType` ENUM('exam', 'note', 'file', 'video') NULL;"); } catch(e) {}
-      console.log('✓ Ensured transaction/subscription itemType allows video.');
-      
-      // Add content column to videos table
-      try { await db.sequelize.query('ALTER TABLE `videos` ADD COLUMN `content` TEXT NULL;'); } catch(e) {}
-      console.log('✓ Ensured videos table has content column.');
-      
-      // Force add new User columns (ignore error if they exist)
-      try { await db.sequelize.query('ALTER TABLE `users` ADD COLUMN `fieldId` INTEGER NULL;'); } catch(e) {}
-      console.log('✓ Ensured users table has email and fieldId columns.');
 
-      // Fix charset for short_notes to support emojis/special chars
-      try { 
-        await db.sequelize.query('ALTER TABLE `short_notes` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
-        await db.sequelize.query('ALTER TABLE `short_notes` MODIFY `content` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
-        console.log('✓ Ensured short_notes table supports utf8mb4.');
-      } catch(e) { console.log('Note: Could not alter short_notes charset (might already be set or permission denied).'); }
-
-    } catch (e) {
-      // Ignore main errors
-    }
+    // Fix charset for short_notes
+    try { 
+      await db.sequelize.query('ALTER TABLE `short_notes` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+      await db.sequelize.query('ALTER TABLE `short_notes` MODIFY `content` LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;');
+      console.log('✓ Ensured short_notes table supports utf8mb4.');
+    } catch(e) {}
     
     // Seed dummy data (Disabled by default)
     // await notificationSeeder();

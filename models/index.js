@@ -43,6 +43,7 @@ db.Topic = require('./Topic')(sequelize, Sequelize);
 db.Withdrawal = require('./Withdrawal')(sequelize, Sequelize);
 db.Video = require('./Video')(sequelize, Sequelize);
 db.ContentReport = require('./ContentReport')(sequelize, Sequelize);
+db.PackageType = require('./PackageType')(sequelize, Sequelize);
 
 
 

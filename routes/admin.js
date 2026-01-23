@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { 
   User, Exam, File, Transaction, Admin, 
-  Subscription, Package, PackageItem, ShortNote, Video,
+  Subscription, Package, PackageItem, ShortNote, Video, PackageType,
   University, Course, Department, Topic, Field, Question, Choice, Withdrawal, Notification, sequelize 
 } = require('../models');
 const bcrypt = require('bcryptjs');
@@ -881,14 +881,15 @@ router.patch('/users/:id/toggle-status', async (req, res) => {
 // Get all metadata for dropdowns
 router.get('/metadata', async (req, res) => {
   try {
-    const [universities, courses, departments, topics, fields] = await Promise.all([
+    const [universities, courses, departments, topics, fields, packageTypes] = await Promise.all([
       University.findAll({ attributes: ['id', 'name'] }),
       Course.findAll({ attributes: ['id', 'name', 'code', 'fieldId'] }),
       Department.findAll({ attributes: ['id', 'name'] }),
       Topic.findAll({ attributes: ['id', 'name', 'type', 'courseId', 'parentId'] }),
-      Field.findAll({ attributes: ['id', 'name', 'departmentId'] })
+      Field.findAll({ attributes: ['id', 'name', 'departmentId'] }),
+      PackageType.findAll({ attributes: ['id', 'name'] })
     ]);
-    res.json({ universities, courses, departments, topics, fields });
+    res.json({ universities, courses, departments, topics, fields, packageTypes });
   } catch (error) {
     console.error('Metadata error:', error);
     res.status(500).json({ message: 'Error fetching metadata' });

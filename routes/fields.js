@@ -4,7 +4,8 @@ const { Field, Department, University } = require('../models');
 const optionalAuth = require('../middleware/optionalAuth');
 
 // Get all fields
-router.get('/', optionalAuth, async (req, res) => {
+// Get all fields
+router.get('/', async (req, res) => {
   try {
     const { departmentId } = req.query;
     const whereClause = {};
@@ -33,7 +34,8 @@ router.get('/', optionalAuth, async (req, res) => {
 });
 
 // Get field by ID
-router.get('/:id', optionalAuth, async (req, res) => {
+// Get field by ID
+router.get('/:id', async (req, res) => {
   try {
     const field = await Field.findByPk(req.params.id, {
       include: [
