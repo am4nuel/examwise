@@ -12,6 +12,7 @@ const { upload, uploadToLocal, uploadToGitHub, getGitHubRepos } = require('../ut
 const PaymentService = require('../services/payment_service');
 const NotificationService = require('../services/notification_service');
 const FirebaseService = require('../services/FirebaseService');
+const firebaseAdmin = require('firebase-admin');
 
 // Helper to sanitize ID fields (convert empty strings to null)
 const sanitizeIdFields = (data) => {
@@ -1496,6 +1497,213 @@ router.get('/packages/:id/subscribers', async (req, res) => {
   }
 });
 
+// --- Bank Payments Approval ---
+router.post('/bank-payments/approve', async (req, res) => {
+  let { requestId, txRef, userId, amount, itemType, itemId, packageId, selectedItems, items } = req.body;
+  
+  // Normalize IDs and Types
+  userId = parseInt(userId);
+  if (itemType === 'material') itemType = 'file';
+  if (itemType === 'short_note') itemType = 'note';
+
+  try {
+    const transaction = await sequelize.transaction();
+    try {
+      // 1. Create/Update SQL Transaction record
+      const [tx, created] = await Transaction.findOrCreate({
+        where: { txRef },
+        defaults: {
+          userId,
+          amount,
+          type: 'deposit',
+          itemType,
+          itemId,
+          packageId,
+          selectedItems: selectedItems ? JSON.stringify(selectedItems) : null,
+          cartItems: items ? JSON.stringify(items) : null,
+          status: 'completed',
+          paymentMethod: 'bank_transfer'
+        },
+        transaction
+      });
+
+      if (!created) {
+        await tx.update({ status: 'completed' }, { transaction });
+      }
+
+      // 2. Handle Subscriptions/Access
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + 1); // Default 1 month access
+
+      if (packageId) {
+        await Subscription.create({
+          userId,
+          packageId,
+          startDate,
+          endDate,
+          status: 'active'
+        }, { transaction });
+      } else if (items && Array.isArray(items)) {
+        // Handle cart items
+        for (const item of items) {
+          let cType = item.type || item.itemType;
+          let cIdRaw = item.id || item.itemId;
+          
+          // Sanitize ID (handle "exam_188" type strings)
+          let cId = typeof cIdRaw === 'string' && cIdRaw.includes('_') 
+            ? parseInt(cIdRaw.split('_')[1]) 
+            : parseInt(cIdRaw);
+
+          if (cType === 'material') cType = 'file';
+          if (cType === 'short_note') cType = 'note';
+
+          await Subscription.create({
+            userId,
+            itemType: cType,
+            itemId: cId,
+            status: 'active',
+            startDate,
+            endDate
+          }, { transaction });
+        }
+      } else if (itemType && itemId) {
+        // Handle single item
+        // Sanitize ID
+        let cleanedItemId = typeof itemId === 'string' && itemId.includes('_') 
+          ? parseInt(itemId.split('_')[1]) 
+          : parseInt(itemId);
+
+        await Subscription.create({
+          userId,
+          itemType,
+          itemId: cleanedItemId,
+          status: 'active',
+          startDate,
+          endDate
+        }, { transaction });
+      }
+
+      await transaction.commit();
+    } catch (sqlError) {
+      if (transaction) await transaction.rollback();
+      throw sqlError;
+    }
+
+    // --- Steps after SUCCESSFUL SQL transaction ---
+
+    // 3. Update Firestore status
+    try {
+      await firebaseAdmin.firestore().collection('bank_payment_requests').doc(requestId).update({
+        status: 'approved',
+        updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (firestoreError) {
+      console.error('Firestore update failed after SQL commit:', firestoreError);
+    }
+
+    // 4. Send FCM Notification
+    try {
+      const user = await User.findByPk(userId);
+      const fcmToken = user ? user.fcmToken : null;
+
+      console.log(`[Approval] Notification check for User ${userId}. Token found: ${fcmToken ? 'Yes' : 'No'}`);
+
+      if (fcmToken) {
+        console.log(`[Approval] Sending notification to token: ${fcmToken.substring(0, 10)}...`);
+        await FirebaseService.sendIndividualNotification(
+          fcmToken,
+          'Payment Approved!',
+          'Your bank transfer has been verified and your items are now accessible.',
+          { 
+            type: 'payment_approved',
+            txRef: txRef,
+            packageId: packageId ? packageId.toString() : '',
+            isCart: (items && Array.isArray(items)) ? 'true' : 'false'
+          }
+        );
+        console.log(`[Approval] Notification sent successfully`);
+      } else {
+        console.warn(`[Approval] No FCM token found for user ${userId}, skipping notification.`);
+      }
+    } catch (fcmError) {
+      console.error('FCM Notification failed after SQL commit:', fcmError);
+    }
+
+    res.json({ success: true, message: 'Payment approved and items activated' });
+
+  } catch (error) {
+    console.error('Bank payment approval error:', error);
+    res.status(500).json({ message: 'Error approving payment', error: error.message });
+  }
+});
+
+router.post('/bank-payments/decline', async (req, res) => {
+  const { requestId, userId, reason } = req.body;
+
+  try {
+    // 1. Update Firestore status
+    await firebaseAdmin.firestore().collection('bank_payment_requests').doc(requestId).update({
+      status: 'declined',
+      declineReason: reason,
+      updatedAt: firebaseAdmin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 2. Send FCM Notification
+    try {
+      const user = await User.findByPk(userId);
+      const fcmToken = user ? user.fcmToken : null;
+
+      console.log(`[Decline] Notification check for User ${userId}. Token found: ${fcmToken ? 'Yes' : 'No'}`);
+
+      if (fcmToken) {
+        console.log(`[Decline] Sending notification to token: ${fcmToken.substring(0, 10)}...`);
+        await FirebaseService.sendIndividualNotification(
+          fcmToken,
+          'Payment Declined',
+          `Your bank transfer request was declined. Reason: ${reason || 'Invalid receipt'}`,
+          { 
+            type: 'payment_declined',
+            reason: reason || ''
+          }
+        );
+        console.log(`[Decline] Notification sent successfully`);
+      } else {
+        console.warn(`[Decline] No FCM token found for user ${userId}, skipping notification.`);
+      }
+    } catch (fcmError) {
+      console.error('FCM Notification failed after SQL commit:', fcmError);
+    }
+
+    res.json({ success: true, message: 'Payment declined' });
+
+  } catch (error) {
+    console.error('Bank payment decline error:', error);
+    res.status(500).json({ message: 'Error declining payment', error: error.message });
+  }
+});
+
+// --- Platform Settings ---
+router.get('/platform-settings', async (req, res) => {
+  try {
+    const result = await FirebaseService.getPlatformSettings();
+    if (!result.success) throw new Error(result.error);
+    res.json(result.data);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching platform settings' });
+  }
+});
+
+router.put('/platform-settings', async (req, res) => {
+  try {
+    const result = await FirebaseService.updatePlatformSettings(req.body);
+    if (!result.success) throw new Error(result.error);
+    res.json({ message: 'Platform settings updated successfully' });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 // --- Analytics ---
 router.get('/analytics', async (req, res) => {
   try {
@@ -1606,11 +1814,16 @@ router.get('/analytics', async (req, res) => {
     }));
 
     // Recent transactions
-    const recentTransactions = await Transaction.findAll({
-      limit: 10,
-      order: [['createdAt', 'DESC']],
-      include: [{ model: User, as: 'user', attributes: ['id', 'fullName'] }]
-    });
+    let recentTransactions = [];
+    try {
+      recentTransactions = await Transaction.findAll({
+        limit: 10,
+        order: [['createdAt', 'DESC']],
+        include: [{ model: User, as: 'user', attributes: ['id', 'fullName'] }]
+      });
+    } catch (txError) {
+      console.error('Error fetching recent transactions for analytics:', txError.message);
+    }
 
     // Revenue trend (last 12 months)
     const revenueTrend = [];

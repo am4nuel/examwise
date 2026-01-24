@@ -192,6 +192,44 @@ class FirebaseService {
       return { success: false, error: error.message };
     }
   }
+
+  /**
+   * Get platform settings from Firestore
+   */
+  static async getPlatformSettings() {
+    try {
+      const doc = await admin.firestore().collection('settings').doc('platform').get();
+      if (!doc.exists) {
+        const defaultData = {
+          maintenanceMode: false,
+          autoBackup: true,
+          notificationsEnabled: true,
+          githubSync: true,
+          bankReceiptUploadPath: 'server'
+        };
+        await admin.firestore().collection('settings').doc('platform').set(defaultData);
+        return { success: true, data: defaultData };
+      }
+      return { success: true, data: doc.data() };
+    } catch (error) {
+      console.error('Error fetching platform settings:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Update platform settings in Firestore
+   * @param {object} data - Settings data
+   */
+  static async updatePlatformSettings(data) {
+    try {
+      await admin.firestore().collection('settings').doc('platform').set(data, { merge: true });
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating platform settings:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 module.exports = FirebaseService;

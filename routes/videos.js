@@ -6,7 +6,7 @@ const auth = require('../middleware/auth');
 // Get all videos with filters
 router.get('/', async (req, res) => {
   try {
-    const { courseId, departmentId, fieldId, topicId, search } = req.query;
+    const { courseId, departmentId, fieldId, topicId, search, packageId, subscriptionStatus = 'all' } = req.query;
     const where = {};
     
     if (courseId) where.courseId = courseId;
@@ -14,6 +14,47 @@ router.get('/', async (req, res) => {
     
     if (search) {
       where.title = { [require('sequelize').Op.like]: `%${search}%` };
+    }
+
+    // Filter by Package
+    if (packageId) {
+      where.id = {
+        [require('sequelize').Op.in]: require('../models').sequelize.literal(`(
+          SELECT itemId FROM package_items 
+          WHERE packageId = ${parseInt(packageId)} AND itemType = 'video'
+        )`)
+      };
+    }
+
+    // Subscription Status Filter (Consistency with other routes)
+    if (req.user && subscriptionStatus !== 'all') {
+      const userId = req.user.id;
+      const { Op, Sequelize } = require('sequelize');
+      const subQueryDirect = `(
+        SELECT itemId FROM subscriptions 
+        WHERE userId = ${userId} AND itemType = 'video' AND status = 'active'
+      )`;
+      const subQueryPackage = `(
+        SELECT pi.itemId FROM subscriptions s 
+        JOIN package_items pi ON s.packageId = pi.packageId 
+        WHERE s.userId = ${userId} AND pi.itemType = 'video' AND s.status = 'active'
+      )`;
+
+      if (subscriptionStatus === 'subscribed') {
+        where.id = {
+          [Op.in]: Sequelize.literal(`(
+            SELECT id FROM videos 
+            WHERE id IN ${subQueryDirect} OR id IN ${subQueryPackage}
+          )`)
+        };
+      } else if (subscriptionStatus === 'unsubscribed') {
+        where.id = {
+          [Op.notIn]: Sequelize.literal(`(
+            SELECT id FROM videos 
+            WHERE id IN ${subQueryDirect} OR id IN ${subQueryPackage}
+          )`)
+        };
+      }
     }
 
     const include = [

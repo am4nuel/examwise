@@ -71,6 +71,7 @@ const adminRoutes = require('./routes/admin');
 const fieldRoutes = require('./routes/fields'); // Added
 const videoRoutes = require('./routes/videos'); // Added
 const contentReportRoutes = require('./routes/contentReports');
+const bankPaymentRoutes = require('./routes/bank_payments');
 
 app.use('/api/departments', departmentRoutes);
 app.use('/api/fields', fieldRoutes); // Added
@@ -93,6 +94,7 @@ app.use('/api/admin/videos', videoRoutes); // Explicitly alias for admin panel
 app.use('/api/admin', adminRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/content-reports', contentReportRoutes);
+app.use('/api/bank-payments', bankPaymentRoutes);
 
 
 
@@ -147,8 +149,25 @@ const startServer = async () => {
       // Add content column to videos table
       try { await db.sequelize.query('ALTER TABLE `videos` ADD COLUMN `content` TEXT NULL;'); } catch(e) {}
 
+      // Add missing columns to transactions table
+      const addColumnIfMissing = async (table, column, definition) => {
+        try {
+          await db.sequelize.query(`ALTER TABLE \`${table}\` ADD COLUMN \`${column}\` ${definition};`);
+          console.log(`✓ Added column ${column} to ${table} table.`);
+        } catch (err) {
+          if (err.parent?.code === 'ER_DUP_FIELDNAME') {
+            // Already exists, ignore
+          } else {
+            console.error(`✗ Error adding column ${column}:`, err.message);
+          }
+        }
+      };
+
+      await addColumnIfMissing('transactions', 'selectedItems', 'LONGTEXT NULL');
+      await addColumnIfMissing('transactions', 'cartItems', 'LONGTEXT NULL');
+
     } catch (e) {
-      console.log('Note: Some pre-sync migrations skipped or already applied.');
+      console.error('⚠ Pre-sync migration phase failed:', e.message);
     }
 
     // Sync all models

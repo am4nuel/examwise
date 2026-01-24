@@ -8,7 +8,7 @@ const auth = require('../middleware/auth');
 // GET paginated short notes with search
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, offset: queryOffset, search = '', departmentId, courseId, sort = 'latest', subscriptionStatus = 'all' } = req.query;
+    const { page = 1, limit = 10, offset: queryOffset, search = '', departmentId, courseId, packageId, sort = 'latest', subscriptionStatus = 'all' } = req.query;
     const offset = queryOffset ? parseInt(queryOffset) : (page - 1) * limit;
 
     const where = {};
@@ -22,6 +22,16 @@ router.get('/', optionalAuth, async (req, res) => {
     // Filter by Course
     if (courseId) {
       where.courseId = courseId;
+    }
+
+    // Filter by Package
+    if (packageId) {
+      where.id = {
+        [Op.in]: Sequelize.literal(`(
+          SELECT itemId FROM package_items 
+          WHERE packageId = ${parseInt(packageId)} AND itemType = 'note'
+        )`)
+      };
     }
 
     // Subscription Status Filter

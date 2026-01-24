@@ -57,6 +57,11 @@ module.exports = (sequelize, DataTypes) => {
     selectedItems: {
       type: DataTypes.JSON,
       allowNull: true
+    },
+    cartItems: {
+      type: DataTypes.JSON,
+      allowNull: true,
+      comment: 'List of items in the cart for checkout'
     }
   }, {
     tableName: 'transactions',

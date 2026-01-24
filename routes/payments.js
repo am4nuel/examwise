@@ -8,7 +8,7 @@ const auth = require('../middleware/auth');
 // Initialize a transaction
 router.post('/initialize', auth, async (req, res) => {
   try {
-    const { txRef, amount, packageId, itemType, itemId, selectedItems } = req.body;
+    const { txRef, amount, packageId, itemType, itemId, selectedItems, cartItems } = req.body;
 
     if (!txRef || !amount) {
       return res.status(400).json({ message: 'Transaction reference and amount are required' });
@@ -22,6 +22,7 @@ router.post('/initialize', auth, async (req, res) => {
       itemType,
       itemId,
       selectedItems,
+      cartItems, // Store cart items
       status: 'pending',
       paymentMethod: 'chapa'
     });
@@ -69,7 +70,7 @@ router.get('/check-pending', auth, async (req, res) => {
           });
         }
       } catch (err) {
-        console.error(`Error verifying tx ${tx.txRef}:`, err.message);
+        // console.error(`Error verifying tx ${tx.txRef}:`, err.message);
         // Keep as pending in list or ignore? Client only cares if 'paid'.
         // results.push(tx); 
       }
@@ -103,6 +104,7 @@ router.post('/verify', auth, async (req, res) => {
     const itemType = req.body.itemType || transaction.itemType;
     const itemId = req.body.itemId || transaction.itemId;
     const selectedItems = transaction.selectedItems; // Use stored selected items
+    const cartItems = transaction.cartItems; // Use stored cart items
 
     // If already completed, find existing subscription
     if (transaction.status === 'completed') {
@@ -131,38 +133,58 @@ router.post('/verify', auth, async (req, res) => {
       return res.status(500).json({ error: 'Failed to verify payment with provider' });
     }
 
-    // Create Subscription
-    let subscription;
+    // Create Subscriptions
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + 30); // Default 30 days if not logic elsewhere
+    endDate.setDate(endDate.getDate() + 30); // Default 30 days
 
-    // Check package duration if packageId
-    if (packageId) {
-      // Fetch package to get duration? For now default 30 days or handle in Subscription logic
+    let subscriptionsCreated = [];
+
+    // Case 1: Cart Checkout (Multiple items)
+    if (cartItems && Array.isArray(cartItems) && cartItems.length > 0) {
+      for (const item of cartItems) {
+        // Normalize type
+        let type = item.type;
+        if (type === 'material') type = 'file';
+        if (type === 'short_note') type = 'note';
+
+        const sub = await Subscription.create({
+          userId: req.user.id,
+          packageId: null, // Cart items are individual items for now
+          itemType: type,
+          itemId: item.id.split('_')[1], // Assuming id is 'type_id'
+          paymentStatus: 'completed',
+          startDate: new Date(),
+          endDate,
+          transactionId: transaction.id,
+        });
+        subscriptionsCreated.push(sub);
+      }
+    } 
+    // Case 2: Standard Single Item/Package Checkout
+    else {
+      // Logic similar to SubscriptionController.createSubscription
+      // Create subscription record
+      const sub = await Subscription.create({
+        userId: req.user.id,
+        packageId,
+        itemType,
+        itemId,
+        paymentStatus: 'completed',
+        startDate: new Date(),
+        endDate,
+        transactionId: transaction.id,
+        selectedItems: selectedItems
+      });
+      subscriptionsCreated.push(sub);
     }
-
-    // Logic similar to SubscriptionController.createSubscription
-    // Ideally we should reuse a service or controller method
-    
-    // Create subscription record
-    subscription = await Subscription.create({
-      userId: req.user.id,
-      packageId,
-      itemType,
-      itemId,
-      paymentStatus: 'completed',
-      startDate: new Date(),
-      endDate,
-      transactionId: transaction.id,
-      selectedItems: selectedItems
-    });
 
     // Update Transaction
     await transaction.update({ status: 'completed' });
 
     res.status(201).json({ 
-      message: 'Payment verified and subscription created', 
-      subscription 
+      message: 'Payment verified and subscriptions created', 
+      subscription: subscriptionsCreated[0], // Return first for backward compatibility or all
+      subscriptions: subscriptionsCreated
     });
 
   } catch (error) {
