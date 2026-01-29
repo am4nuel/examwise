@@ -1,16 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { Video, Course, Topic, sequelize } = require('../models');
+const { Video, Course, Topic, ContentType, sequelize } = require('../models');
 const auth = require('../middleware/auth');
 
 // Get all videos with filters
 router.get('/', async (req, res) => {
   try {
-    const { courseId, departmentId, fieldId, topicId, search, packageId, subscriptionStatus = 'all' } = req.query;
+    const { courseId, departmentId, fieldId, topicId, search, packageId, contentTypeId, subscriptionStatus = 'all' } = req.query;
     const where = {};
     
     if (courseId) where.courseId = courseId;
     if (topicId) where.topicId = topicId;
+    if (contentTypeId) where.contentTypeId = contentTypeId;
     
     if (search) {
       where.title = { [require('sequelize').Op.like]: `%${search}%` };
@@ -64,7 +65,8 @@ router.get('/', async (req, res) => {
         attributes: ['name', 'fieldId'],
         required: !!(departmentId || fieldId)
       },
-      { model: Topic, as: 'topic', attributes: ['name'] }
+      { model: Topic, as: 'topic', attributes: ['name'] },
+      { model: ContentType, as: 'contentType' }
     ];
 
     if (departmentId || fieldId) {

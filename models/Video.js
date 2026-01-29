@@ -46,6 +46,14 @@ module.exports = (sequelize, DataTypes) => {
     price: {
       type: DataTypes.DECIMAL(10, 2),
       defaultValue: 0.00
+    },
+    contentTypeId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'content_types',
+        key: 'id'
+      }
     }
   }, {
     tableName: 'videos',
@@ -74,6 +82,12 @@ module.exports = (sequelize, DataTypes) => {
       otherKey: 'packageId',
       as: 'packages',
       constraints: false
+    });
+
+    // A video can belong to a content type
+    Video.belongsTo(models.ContentType, {
+      foreignKey: 'contentTypeId',
+      as: 'contentType'
     });
   };
 

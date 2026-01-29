@@ -64,6 +64,14 @@ module.exports = (sequelize, DataTypes) => {
         model: 'universities',
         key: 'id'
       }
+    },
+    contentTypeId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'content_types',
+        key: 'id'
+      }
     }
   }, {
     tableName: 'files',
@@ -87,6 +95,12 @@ module.exports = (sequelize, DataTypes) => {
     File.belongsTo(models.University, {
       foreignKey: 'universityId',
       as: 'university'
+    });
+
+    // A file can belong to a content type
+    File.belongsTo(models.ContentType, {
+      foreignKey: 'contentTypeId',
+      as: 'contentType'
     });
   };
 

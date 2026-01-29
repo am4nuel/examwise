@@ -3,7 +3,7 @@ const router = express.Router();
 const { 
   User, Exam, File, Transaction, Admin, 
   Subscription, Package, PackageItem, ShortNote, Video, PackageType,
-  University, Course, Department, Topic, Field, Question, Choice, Withdrawal, Notification, sequelize 
+  University, Course, Department, Topic, Field, Question, Choice, Withdrawal, Notification, ContentType, sequelize 
 } = require('../models');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -312,7 +312,10 @@ router.get('/packages/:id/details', async (req, res) => {
 router.get('/users/:id/details', async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id, {
-      attributes: { exclude: ['password'] }
+      attributes: { exclude: ['password'] },
+      include: [
+        { model: Field, as: 'field', attributes: ['id', 'name'] }
+      ]
     });
 
     if (!user) return res.status(404).json({ message: 'User not found' });
@@ -830,14 +833,14 @@ router.post('/users', async (req, res) => {
 // Update User
 router.put('/users/:id', async (req, res) => {
   try {
-    const { fullName, phoneNumber, role, gender } = req.body;
+    const { fullName, phoneNumber, role, gender, fieldId } = sanitizeIdFields(req.body);
     const user = await User.findByPk(req.params.id);
     
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    await user.update({ fullName, phoneNumber, role, gender });
+    await user.update({ fullName, phoneNumber, role, gender, fieldId });
     res.json(user);
   } catch (error) {
     console.error('Update user error:', error);
@@ -979,11 +982,19 @@ router.get('/exams', async (req, res) => {
       distinct: true
     });
 
+    const examsWithCounts = await Promise.all(rows.map(async (exam) => {
+      const questionCount = await Question.count({ where: { examId: exam.id } });
+      return {
+        ...exam.toJSON(),
+        questionCount
+      };
+    }));
+
     res.json({
       total: count,
       pages: Math.ceil(count / limit),
       currentPage: parseInt(page),
-      data: rows
+      data: examsWithCounts
     });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching exams' });
@@ -2508,6 +2519,47 @@ router.put('/firebase-configs', async (req, res) => {
     res.json({ message: 'Firebase keys updated successfully' });
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+// --- Content Types ---
+router.get('/content-types', async (req, res) => {
+  try {
+    const contentTypes = await ContentType.findAll({ order: [['name', 'ASC']] });
+    res.json(contentTypes);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching content types' });
+  }
+});
+
+router.post('/content-types', async (req, res) => {
+  try {
+    const contentType = await ContentType.create(req.body);
+    res.status(201).json(contentType);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+router.put('/content-types/:id', async (req, res) => {
+  try {
+    const contentType = await ContentType.findByPk(req.params.id);
+    if (!contentType) return res.status(404).json({ message: 'Content Type not found' });
+    await contentType.update(req.body);
+    res.json(contentType);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+router.delete('/content-types/:id', async (req, res) => {
+  try {
+    const contentType = await ContentType.findByPk(req.params.id);
+    if (!contentType) return res.status(404).json({ message: 'Content Type not found' });
+    await contentType.destroy();
+    res.json({ message: 'Content Type deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error deleting Content Type' });
   }
 });
 

@@ -72,6 +72,7 @@ const fieldRoutes = require('./routes/fields'); // Added
 const videoRoutes = require('./routes/videos'); // Added
 const contentReportRoutes = require('./routes/contentReports');
 const bankPaymentRoutes = require('./routes/bank_payments');
+const contentTypeRoutes = require('./routes/contentTypes'); // Added
 
 app.use('/api/departments', departmentRoutes);
 app.use('/api/fields', fieldRoutes); // Added
@@ -95,7 +96,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/content-reports', contentReportRoutes);
 app.use('/api/bank-payments', bankPaymentRoutes);
-
+app.use('/api/content-types', contentTypeRoutes); // Added
 
 
 // Test route
@@ -158,13 +159,19 @@ const startServer = async () => {
           if (err.parent?.code === 'ER_DUP_FIELDNAME') {
             // Already exists, ignore
           } else {
-            console.error(`✗ Error adding column ${column}:`, err.message);
+            console.error(`✗ Error adding column ${column} to ${table}:`, err.message);
           }
         }
       };
 
       await addColumnIfMissing('transactions', 'selectedItems', 'LONGTEXT NULL');
       await addColumnIfMissing('transactions', 'cartItems', 'LONGTEXT NULL');
+
+      // Add contentTypeId to all content tables
+      const contentTables = ['files', 'exams', 'short_notes', 'videos'];
+      for (const table of contentTables) {
+          await addColumnIfMissing(table, 'contentTypeId', 'CHAR(36) NULL');
+      }
 
     } catch (e) {
       console.error('⚠ Pre-sync migration phase failed:', e.message);

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { Exam, Course, Question, Choice, File, sequelize } = require('../models');
+const { Exam, Course, Question, Choice, File, ContentType, sequelize } = require('../models');
 const { Op, Sequelize } = require('sequelize');
 const optionalAuth = require('../middleware/optionalAuth');
 const auth = require('../middleware/auth');
@@ -8,7 +8,7 @@ const auth = require('../middleware/auth');
 // GET paginated exams with search
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, offset: queryOffset, search = '', departmentId, courseId, packageId, sort = 'latest', subscriptionStatus = 'all' } = req.query;
+    const { page = 1, limit = 10, offset: queryOffset, search = '', departmentId, courseId, packageId, contentTypeId, sort = 'latest', subscriptionStatus = 'all' } = req.query;
     const offset = queryOffset ? parseInt(queryOffset) : (page - 1) * limit;
 
     const where = {};
@@ -22,6 +22,11 @@ router.get('/', optionalAuth, async (req, res) => {
     // Filter by Course
     if (courseId) {
       where.courseId = courseId;
+    }
+
+    // Filter by Content Type
+    if (contentTypeId) {
+      where.contentTypeId = contentTypeId;
     }
 
     // Filter by Package
@@ -86,6 +91,10 @@ router.get('/', optionalAuth, async (req, res) => {
           as: 'questions',
           limit: 2,
           include: [{ model: Choice, as: 'choices' }]
+        },
+        {
+          model: ContentType,
+          as: 'contentType'
         }
       ],
       distinct: true, // Needed again because we added a 1:M include (questions)
@@ -115,7 +124,8 @@ router.get('/:id', auth, async (req, res) => {
           as: 'questions',
           include: [{ model: Choice, as: 'choices' }]
         },
-        { model: File, as: 'files' }
+        { model: File, as: 'files' },
+        { model: ContentType, as: 'contentType' }
       ]
     });
     if (!exam) return res.status(404).json({ message: 'Exam not found' });
@@ -142,7 +152,8 @@ router.get('/:id', auth, async (req, res) => {
             as: 'questions',
             include: [{ model: Choice, as: 'choices' }]
           },
-          { model: File, as: 'files' }
+          { model: File, as: 'files' },
+          { model: ContentType, as: 'contentType' }
         ]
       });
       return res.json(updatedExam);

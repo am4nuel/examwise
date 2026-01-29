@@ -40,6 +40,14 @@ module.exports = (sequelize, DataTypes) => {
         model: 'universities',
         key: 'id'
       }
+    },
+    contentTypeId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'content_types',
+        key: 'id'
+      }
     }
   }, {
     tableName: 'short_notes',
@@ -53,6 +61,12 @@ module.exports = (sequelize, DataTypes) => {
     ShortNote.belongsTo(models.University, {
       foreignKey: 'universityId',
       as: 'university'
+    });
+
+    // A short note can belong to a content type
+    ShortNote.belongsTo(models.ContentType, {
+      foreignKey: 'contentTypeId',
+      as: 'contentType'
     });
   };
 

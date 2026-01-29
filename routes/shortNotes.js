@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { ShortNote, Course, sequelize } = require('../models');
+const { ShortNote, Course, ContentType, sequelize } = require('../models');
 const { Op, Sequelize } = require('sequelize');
 const optionalAuth = require('../middleware/optionalAuth');
 const auth = require('../middleware/auth');
@@ -8,7 +8,7 @@ const auth = require('../middleware/auth');
 // GET paginated short notes with search
 router.get('/', optionalAuth, async (req, res) => {
   try {
-    const { page = 1, limit = 10, offset: queryOffset, search = '', departmentId, courseId, packageId, sort = 'latest', subscriptionStatus = 'all' } = req.query;
+    const { page = 1, limit = 10, offset: queryOffset, search = '', departmentId, courseId, packageId, contentTypeId, sort = 'latest', subscriptionStatus = 'all' } = req.query;
     const offset = queryOffset ? parseInt(queryOffset) : (page - 1) * limit;
 
     const where = {};
@@ -22,6 +22,11 @@ router.get('/', optionalAuth, async (req, res) => {
     // Filter by Course
     if (courseId) {
       where.courseId = courseId;
+    }
+
+    // Filter by Content Type
+    if (contentTypeId) {
+      where.contentTypeId = contentTypeId;
     }
 
     // Filter by Package
@@ -79,7 +84,10 @@ router.get('/', optionalAuth, async (req, res) => {
       where,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      include: [courseInclude],
+      include: [
+        courseInclude,
+        { model: ContentType, as: 'contentType' }
+      ],
       order: [['createdAt', sort === 'oldest' ? 'ASC' : 'DESC']]
     });
 
@@ -98,7 +106,10 @@ router.get('/', optionalAuth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const note = await ShortNote.findByPk(req.params.id, {
-      include: [{ model: Course, as: 'course' }]
+      include: [
+        { model: Course, as: 'course' },
+        { model: ContentType, as: 'contentType' }
+      ]
     });
     if (!note) return res.status(404).json({ message: 'Note not found' });
     res.json(note);

@@ -84,6 +84,14 @@ module.exports = (sequelize, DataTypes) => {
         model: 'fields',
         key: 'id'
       }
+    },
+    contentTypeId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: {
+        model: 'content_types',
+        key: 'id'
+      }
     }
   }, {
     tableName: 'exams',
@@ -135,6 +143,12 @@ module.exports = (sequelize, DataTypes) => {
     Exam.belongsTo(models.Field, {
       foreignKey: 'fieldId',
       as: 'field'
+    });
+
+    // An exam can belong to a content type
+    Exam.belongsTo(models.ContentType, {
+      foreignKey: 'contentTypeId',
+      as: 'contentType'
     });
   };
 
