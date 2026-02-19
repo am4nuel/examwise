@@ -33,7 +33,7 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Middleware
 app.use(cors({
-  origin: '*',
+  origin: ['https://exam-wise.netlify.app', 'http://localhost:5173', 'http://localhost:3000', '*'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -210,7 +210,7 @@ const startServer = async () => {
     // Seed dummy data (Disabled by default)
     // await notificationSeeder();
     // await require('./price_seeder')();
-    // await adminSeeder();
+    await adminSeeder();
     // await universitySeeder(); 
     // await topicSeeder();
 
