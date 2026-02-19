@@ -45,7 +45,8 @@ module.exports = (sequelize, DataTypes) => {
     });
     ContentReport.belongsTo(models.Question, {
       foreignKey: 'questionId',
-      as: 'question'
+      as: 'question',
+      onDelete: 'CASCADE'
     });
   };
 

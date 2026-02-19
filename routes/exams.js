@@ -82,6 +82,19 @@ router.get('/', optionalAuth, async (req, res) => {
 
     const { count, rows } = await Exam.findAndCountAll({
       where,
+      attributes: {
+        exclude: ['totalQuestions'],
+        include: [
+          [
+            sequelize.literal(`(
+              SELECT COUNT(*)
+              FROM questions AS q
+              WHERE q.examId = \`Exam\`.id
+            )`),
+            'totalQuestions'
+          ]
+        ]
+      },
       limit: parseInt(limit),
       offset: parseInt(offset),
       include: [
@@ -117,6 +130,19 @@ router.get('/', optionalAuth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const exam = await Exam.findByPk(req.params.id, {
+      attributes: {
+        exclude: ['totalQuestions'],
+        include: [
+          [
+            sequelize.literal(`(
+              SELECT COUNT(*)
+              FROM questions AS q
+              WHERE q.examId = ${parseInt(req.params.id)}
+            )`),
+            'totalQuestions'
+          ]
+        ]
+      },
       include: [
         { model: Course, as: 'course' },
         {
@@ -145,6 +171,19 @@ router.get('/:id', auth, async (req, res) => {
     // If we updated anything, re-fetch the exam to get the new choices
     if (hasUpdated) {
       const updatedExam = await Exam.findByPk(req.params.id, {
+        attributes: {
+          exclude: ['totalQuestions'],
+          include: [
+            [
+              sequelize.literal(`(
+                SELECT COUNT(*)
+                FROM questions AS q
+                WHERE q.examId = ${parseInt(req.params.id)}
+              )`),
+              'totalQuestions'
+            ]
+          ]
+        },
         include: [
           { model: Course, as: 'course' },
           {

@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const axios = require('axios');
-const { Transaction, Subscription, Package } = require('../models');
+const { Transaction, Subscription, Package, User } = require('../models');
 const auth = require('../middleware/auth');
+const FirebaseService = require('../services/FirebaseService');
 
 // Initialize a transaction
 router.post('/initialize', auth, async (req, res) => {
@@ -62,7 +63,7 @@ router.get('/check-pending', auth, async (req, res) => {
           }
         });
 
-        if (chapaResponse.data.status === 'success') {
+        if (chapaResponse.data.status === 'success' && chapaResponse.data.data && chapaResponse.data.data.status === 'success') {
           // Determine status for client code (client looks for 'paid')
           results.push({
             ...tx.toJSON(),
@@ -121,7 +122,19 @@ router.post('/verify', auth, async (req, res) => {
         }
       });
 
-      if (chapaResponse.data.status !== 'success') {
+      if (chapaResponse.data.status !== 'success' || (chapaResponse.data.data && chapaResponse.data.data.status !== 'success')) {
+        // Notify Failure (Non-blocking)
+        User.findByPk(req.user.id).then(user => {
+          if (user && user.fcmToken) {
+            FirebaseService.sendIndividualNotification(
+              user.fcmToken,
+              'Payment Failed',
+              'We were unable to verify your payment. If money was deducted, please contact support.',
+              { type: 'subscription_failure' }
+            );
+          }
+        }).catch(e => console.error('FCM Failure Notify Error:', e));
+
         return res.status(400).json({ error: 'Payment not successful' });
       }
     } catch (err) {
@@ -181,6 +194,21 @@ router.post('/verify', auth, async (req, res) => {
     // Update Transaction
     await transaction.update({ status: 'completed' });
 
+    // Send Success FCM Notification (Non-blocking)
+    User.findByPk(req.user.id).then(user => {
+      if (user && user.fcmToken) {
+        FirebaseService.sendIndividualNotification(
+          user.fcmToken,
+          'Subscription Activated',
+          `Your subscription has been successfully activated. Enjoy your access!`,
+          { 
+            type: 'subscription_success',
+            txRef: txRef
+          }
+        );
+      }
+    }).catch(err => console.error('FCM Success Notify Error:', err));
+
     res.status(201).json({ 
       message: 'Payment verified and subscriptions created', 
       subscription: subscriptionsCreated[0], // Return first for backward compatibility or all
@@ -189,6 +217,19 @@ router.post('/verify', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Verification error:', error);
+    
+    // Notify Failure (Non-blocking)
+    User.findByPk(req.user.id).then(user => {
+      if (user && user.fcmToken) {
+        FirebaseService.sendIndividualNotification(
+          user.fcmToken,
+          'Verification System Error',
+          'Something went wrong during payment verification. Please contact support.',
+          { type: 'subscription_error' }
+        );
+      }
+    }).catch(e => console.error('FCM Error Notify Error:', e));
+
     res.status(500).json({ error: 'Failed to verify payment' });
   }
 });

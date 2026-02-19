@@ -141,6 +141,15 @@ const startServer = async () => {
       try { await db.sequelize.query('ALTER TABLE `packages` ADD CONSTRAINT `packages_packageTypeId_foreign_idx` FOREIGN KEY (`packageTypeId`) REFERENCES `package_types`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;'); } catch(e) {}
       console.log('✓ Pre-emptively ensured packages table has packageTypeId column.');
       
+      // Fix content_reports foreign key to allow exam updates (rebuilding questions)
+      try {
+        await db.sequelize.query('ALTER TABLE `content_reports` DROP FOREIGN KEY `content_reports_ibfk_2`;');
+        await db.sequelize.query('ALTER TABLE `content_reports` ADD CONSTRAINT `content_reports_ibfk_2` FOREIGN KEY (`questionId`) REFERENCES `questions` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;');
+        console.log('✓ Manually updated content_reports foreign key to ON DELETE CASCADE.');
+      } catch (e) {
+        // Ignore if constraint doesn't exist or already updated
+      }
+      
       await db.sequelize.query('ALTER TABLE `subscriptions` MODIFY COLUMN `packageId` INTEGER NULL;');
       await db.sequelize.query('ALTER TABLE `transactions` MODIFY COLUMN `userId` INTEGER NULL;');
       

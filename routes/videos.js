@@ -14,7 +14,12 @@ router.get('/', async (req, res) => {
     if (contentTypeId) where.contentTypeId = contentTypeId;
     
     if (search) {
-      where.title = { [require('sequelize').Op.like]: `%${search}%` };
+      const { Op } = require('sequelize');
+      where[Op.or] = [
+        { title: { [Op.like]: `%${search}%` } },
+        { description: { [Op.like]: `%${search}%` } },
+        { '$course.name$': { [Op.like]: `%${search}%` } }
+      ];
     }
 
     // Filter by Package

@@ -16,7 +16,7 @@ const firebaseAdmin = require('firebase-admin');
 
 // Helper to sanitize ID fields (convert empty strings to null)
 const sanitizeIdFields = (data) => {
-  const fields = ['courseId', 'universityId', 'topicId', 'fieldId', 'departmentId', 'examId'];
+  const fields = ['courseId', 'universityId', 'topicId', 'fieldId', 'departmentId', 'examId', 'contentTypeId'];
   const sanitized = { ...data };
   fields.forEach(field => {
     if (sanitized[field] === '') {
@@ -327,6 +327,84 @@ router.get('/users/:id/details', async (req, res) => {
   }
 });
 
+// Create User Subscription
+router.post('/users/:id/subscriptions', async (req, res) => {
+  try {
+    const userId = req.params.id;
+    let { packageId, itemType, itemId, startDate, endDate } = req.body;
+
+    // Validate User
+    const user = await User.findByPk(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // Normalize itemType
+    if (itemType === 'shortNote') itemType = 'note';
+
+    // Default dates if not provided
+    if (!startDate) startDate = new Date();
+    if (!endDate) {
+      const d = new Date(startDate);
+      d.setMonth(d.getMonth() + 1); // Default 1 month
+      endDate = d;
+    }
+
+    let subscription;
+
+    if (packageId) {
+      const pkg = await Package.findByPk(packageId);
+      if (!pkg) return res.status(404).json({ message: 'Package not found' });
+
+      subscription = await Subscription.create({
+        userId,
+        packageId,
+        startDate,
+        endDate,
+        status: 'active'
+      });
+    } else if (itemType && itemId) {
+      if (itemType === 'video') {
+         const video = await Video.findByPk(itemId);
+         if (!video) return res.status(404).json({ message: 'Video not found' });
+      } else if (itemType === 'exam') {
+         const exam = await Exam.findByPk(itemId);
+         if (!exam) return res.status(404).json({ message: 'Exam not found' });
+      } else if (itemType === 'file') {
+         const file = await File.findByPk(itemId);
+         if (!file) return res.status(404).json({ message: 'File not found' });
+      } else if (itemType === 'note') {
+         const note = await ShortNote.findByPk(itemId);
+         if (!note) return res.status(404).json({ message: 'Note not found' });
+      }
+
+      subscription = await Subscription.create({
+        userId,
+        itemType,
+        itemId,
+        startDate,
+        endDate,
+        status: 'active'
+      });
+    } else {
+      return res.status(400).json({ message: 'Provide packageId or itemType/itemId' });
+    }
+
+    // Notify User (Non-blocking)
+    if (user.fcmToken) {
+      FirebaseService.sendIndividualNotification(
+        user.fcmToken,
+        'Subscription Activated',
+        'An admin has activated a subscription for you. Enjoy your access!',
+        { type: 'admin_subscription_success' }
+      );
+    }
+
+    res.status(201).json(subscription);
+  } catch (error) {
+    console.error('Create user subscription error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Get User Subscriptions (Paginated)
 router.get('/users/:id/subscriptions', async (req, res) => {
   try {
@@ -335,7 +413,13 @@ router.get('/users/:id/subscriptions', async (req, res) => {
     
     const { count, rows } = await Subscription.findAndCountAll({
       where: { userId: req.params.id },
-      include: [{ model: Package, as: 'package', attributes: ['id', 'name', 'price'] }],
+      include: [
+        { model: Package, as: 'package', attributes: ['id', 'name', 'price'] },
+        { model: Exam, as: 'exam', attributes: ['id', 'title', 'price'] },
+        { model: File, as: 'file', attributes: ['id', 'fileName', 'price'] },
+        { model: ShortNote, as: 'shortNote', attributes: ['id', 'title', 'price'] },
+        { model: Video, as: 'video', attributes: ['id', 'title', 'price'] }
+      ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
       offset: parseInt(offset)
@@ -775,10 +859,19 @@ router.get('/stats', async (req, res) => {
 // Get all users
 router.get('/users', async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, search = '' } = req.query;
     const offset = (page - 1) * limit;
 
+    const where = {};
+    if (search) {
+      where[Op.or] = [
+        { fullName: { [Op.like]: `%${search}%` } },
+        { phoneNumber: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
     const { count, rows } = await User.findAndCountAll({
+      where,
       attributes: ['id', 'fullName', 'phoneNumber', 'gender', 'role', 'isActive', 'createdAt'],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
@@ -966,17 +1059,31 @@ router.post('/upload', upload.array('file'), async (req, res) => {
 // --- Exams ---
 router.get('/exams', async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, search = '' } = req.query;
     const offset = (page - 1) * limit;
 
+    const where = {};
+    if (search) {
+      where[Op.or] = [
+        { title: { [Op.like]: `%${search}%` } },
+        { description: { [Op.like]: `%${search}%` } },
+        { '$course.name$': { [Op.like]: `%${search}%` } },
+        { '$university.name$': { [Op.like]: `%${search}%` } },
+        { '$department.name$': { [Op.like]: `%${search}%` } },
+        { '$field.name$': { [Op.like]: `%${search}%` } }
+      ];
+    }
+
     const { count, rows } = await Exam.findAndCountAll({
+      where,
       limit: parseInt(limit),
       offset: parseInt(offset),
       include: [
         { model: Course, as: 'course', attributes: ['name'] },
         { model: University, as: 'university', attributes: ['name'] },
         { model: Department, as: 'department', attributes: ['name'] },
-        { model: Field, as: 'field', attributes: ['name'] }
+        { model: Field, as: 'field', attributes: ['name'] },
+        { model: ContentType, as: 'contentType', attributes: ['id', 'name', 'slug'] }
       ],
       order: [['createdAt', 'DESC']],
       distinct: true
@@ -1010,6 +1117,7 @@ router.get('/exams/:id', async (req, res) => {
         { model: Department, as: 'department', attributes: ['id', 'name'] },
         { model: Field, as: 'field', attributes: ['id', 'name'] },
         { model: Topic, as: 'topic', attributes: ['id', 'name'] },
+        { model: ContentType, as: 'contentType', attributes: ['id', 'name', 'slug'] },
         {
           model: Question,
           as: 'questions',
@@ -1224,10 +1332,21 @@ router.delete('/exams/:id', async (req, res) => {
 // --- Files ---
 router.get('/files', async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, search = '' } = req.query;
     const offset = (page - 1) * limit;
 
+    const where = {};
+    if (search) {
+      where[Op.or] = [
+        { title: { [Op.like]: `%${search}%` } },
+        { fileName: { [Op.like]: `%${search}%` } },
+        { '$course.name$': { [Op.like]: `%${search}%` } },
+        { '$university.name$': { [Op.like]: `%${search}%` } }
+      ];
+    }
+
     const { count, rows } = await File.findAndCountAll({
+      where,
       limit: parseInt(limit),
       offset: parseInt(offset),
       include: [
@@ -1285,10 +1404,22 @@ router.delete('/files/:id', async (req, res) => {
 // --- Short Notes ---
 router.get('/short-notes', async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, search = '' } = req.query;
     const offset = (page - 1) * limit;
 
+    const where = {};
+    if (search) {
+      where[Op.or] = [
+        { title: { [Op.like]: `%${search}%` } },
+        { content: { [Op.like]: `%${search}%` } },
+        { author: { [Op.like]: `%${search}%` } },
+        { '$course.name$': { [Op.like]: `%${search}%` } },
+        { '$university.name$': { [Op.like]: `%${search}%` } }
+      ];
+    }
+
     const { count, rows } = await ShortNote.findAndCountAll({
+      where,
       limit: parseInt(limit),
       offset: parseInt(offset),
       include: [
@@ -2399,6 +2530,20 @@ router.post('/courses', async (req, res) => {
     const course = await Course.create(req.body);
     res.status(201).json(course);
   } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+router.post('/courses/bulk', async (req, res) => {
+  try {
+    const { courses } = req.body;
+    if (!courses || !Array.isArray(courses)) {
+      return res.status(400).json({ message: 'Courses array is required' });
+    }
+    const createdCourses = await Course.bulkCreate(courses);
+    res.status(201).json(createdCourses);
+  } catch (error) {
+    console.error('Bulk create courses error:', error);
     res.status(400).json({ message: error.message });
   }
 });

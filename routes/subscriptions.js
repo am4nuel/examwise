@@ -125,6 +125,10 @@ router.post('/', auth, async (req, res) => {
       }
 
       // Create package subscription
+      if (!package.isFree && (!paymentInfo || Object.keys(paymentInfo).length === 0)) {
+        return res.status(402).json({ error: 'Payment required for this package' });
+      }
+
       const subscription = await Subscription.create({
         userId: req.user.id,
         packageId,
@@ -147,6 +151,24 @@ router.post('/', auth, async (req, res) => {
       const populatedCreatedSubscription = await populateSubscriptionDetails([createdSubscription]);
       return res.status(201).json(populatedCreatedSubscription[0]);
     } else if (itemType && itemId) {
+      // 1. Check if the item is free globally
+      let item = null;
+      if (itemType === 'exam') {
+        item = await Exam.findByPk(itemId);
+      } else if (itemType === 'note') {
+        item = await ShortNote.findByPk(itemId);
+      } else if (itemType === 'file') {
+        item = await File.findByPk(itemId);
+      }
+
+      if (!item) {
+        return res.status(404).json({ error: 'Item not found' });
+      }
+
+      if (!item.isFree && (!paymentInfo || Object.keys(paymentInfo).length === 0)) {
+        return res.status(402).json({ error: 'Payment required for this item' });
+      }
+
       // Create single item subscription
       const subscription = await Subscription.create({
         userId: req.user.id,

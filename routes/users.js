@@ -92,15 +92,44 @@ router.get('/profile', auth, async (req, res) => {
   }
 });
 
-// GET all users (Admin only example)
+const { Op } = require('sequelize');
+
+// GET all users (Paginated with Search)
 router.get('/', auth, async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ message: 'Access denied' });
-    
-    const users = await User.findAll({
-      attributes: { exclude: ['password'] }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || '';
+    const offset = (page - 1) * limit;
+
+    console.log('GET /users query:', req.query);
+    console.log('Search term:', search);
+
+    const where = {};
+    if (search) {
+      where[Op.or] = [
+        { fullName: { [Op.like]: `%${search}%` } },
+        { phoneNumber: { [Op.like]: `%${search}%` } }
+      ];
+    }
+    console.log('Where clause:', JSON.stringify(where, null, 2));
+
+    const { count, rows } = await User.findAndCountAll({
+      where,
+      attributes: { exclude: ['password'] },
+      limit,
+      offset,
+      order: [['createdAt', 'DESC']]
     });
-    res.json(users);
+
+    res.json({
+      data: rows,
+      total: count,
+      pages: Math.ceil(count / limit),
+      currentPage: page
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

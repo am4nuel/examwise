@@ -83,6 +83,31 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: 'packageId',
       as: 'package'
     });
+
+    // Individual Item Associations (Polymorphic-like via itemId)
+    Subscription.belongsTo(models.Exam, {
+      foreignKey: 'itemId',
+      as: 'exam',
+      constraints: false
+    });
+
+    Subscription.belongsTo(models.File, {
+      foreignKey: 'itemId',
+      as: 'file',
+      constraints: false
+    });
+
+    Subscription.belongsTo(models.ShortNote, {
+      foreignKey: 'itemId',
+      as: 'shortNote',
+      constraints: false
+    });
+
+    Subscription.belongsTo(models.Video, {
+      foreignKey: 'itemId',
+      as: 'video',
+      constraints: false
+    });
   };
 
   return Subscription;
