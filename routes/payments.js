@@ -93,6 +93,10 @@ router.post('/verify', auth, async (req, res) => {
     }
 
     const { txRef } = req.body;
+    console.log('[/payments/verify] Incoming verify request:', {
+      userId: req.user.id,
+      txRef,
+    });
     
     // Find transaction
     const transaction = await Transaction.findOne({ where: { txRef } });
@@ -105,7 +109,35 @@ router.post('/verify', auth, async (req, res) => {
     const itemType = req.body.itemType || transaction.itemType;
     const itemId = req.body.itemId || transaction.itemId;
     const selectedItems = transaction.selectedItems; // Use stored selected items
-    const cartItems = transaction.cartItems; // Use stored cart items
+
+    // cartItems may be stored as JSON string depending on DB dialect
+    let cartItemsRaw = transaction.cartItems;
+    let cartItems = cartItemsRaw;
+    if (typeof cartItemsRaw === 'string') {
+      try {
+        cartItems = JSON.parse(cartItemsRaw);
+      } catch (e) {
+        console.error('[/payments/verify] Failed to parse cartItems JSON:', {
+          raw: cartItemsRaw,
+          error: e.message,
+        });
+        cartItems = null;
+      }
+    }
+
+    console.log('[/payments/verify] Loaded transaction:', {
+      id: transaction.id,
+      userId: transaction.userId,
+      amount: transaction.amount,
+      packageId,
+      itemType,
+      itemId,
+      hasCartItems: !!cartItems,
+      cartItemsType: cartItems && cartItems.constructor
+        ? cartItems.constructor.name
+        : typeof cartItems,
+      cartItemsCount: Array.isArray(cartItems) ? cartItems.length : 0,
+    });
 
     // If already completed, find existing subscription
     if (transaction.status === 'completed') {
@@ -154,45 +186,83 @@ router.post('/verify', auth, async (req, res) => {
 
     // Case 1: Cart Checkout (Multiple items)
     if (cartItems && Array.isArray(cartItems) && cartItems.length > 0) {
+      console.log('[/payments/verify] Processing cart checkout with items:', cartItems);
       for (const item of cartItems) {
-        // Normalize type
+        // Normalize type (material->file, short_note->note)
         let type = item.type;
         if (type === 'material') type = 'file';
         if (type === 'short_note') type = 'note';
 
+        // Parse itemId: cart sends "123" or "exam_123" format
+        let itemIdVal;
+        if (typeof item.id === 'number') {
+          itemIdVal = item.id;
+        } else {
+          const str = String(item.id || '');
+          itemIdVal = str.includes('_')
+            ? parseInt(str.split('_')[1], 10)
+            : parseInt(str, 10);
+        }
+        if (isNaN(itemIdVal) || itemIdVal <= 0) {
+          console.error('[/payments/verify] Invalid cart item id, skipping:', {
+            rawId: item.id,
+            parsedId: itemIdVal,
+            type,
+          });
+          continue;
+        }
+
         const sub = await Subscription.create({
           userId: req.user.id,
-          packageId: null, // Cart items are individual items for now
+          packageId: null,
           itemType: type,
-          itemId: item.id.split('_')[1], // Assuming id is 'type_id'
-          paymentStatus: 'completed',
+          itemId: itemIdVal,
+          status: 'active',
           startDate: new Date(),
           endDate,
-          transactionId: transaction.id,
+          paymentInfo: { txRef, transactionId: transaction.id },
+        });
+        console.log('[/payments/verify] Created cart subscription:', {
+          subscriptionId: sub.id,
+          itemType: sub.itemType,
+          itemId: sub.itemId,
         });
         subscriptionsCreated.push(sub);
       }
     } 
     // Case 2: Standard Single Item/Package Checkout
     else {
-      // Logic similar to SubscriptionController.createSubscription
-      // Create subscription record
-      const sub = await Subscription.create({
-        userId: req.user.id,
+      console.log('[/payments/verify] Processing single item/package checkout:', {
         packageId,
         itemType,
         itemId,
-        paymentStatus: 'completed',
+      });
+      const sub = await Subscription.create({
+        userId: req.user.id,
+        packageId: packageId || null,
+        itemType: itemType || null,
+        itemId: itemId != null ? parseInt(itemId, 10) : null,
+        status: 'active',
         startDate: new Date(),
         endDate,
-        transactionId: transaction.id,
-        selectedItems: selectedItems
+        selectedItems: selectedItems || null,
+        paymentInfo: { txRef, transactionId: transaction.id },
+      });
+      console.log('[/payments/verify] Created single subscription:', {
+        subscriptionId: sub.id,
+        itemType: sub.itemType,
+        itemId: sub.itemId,
       });
       subscriptionsCreated.push(sub);
     }
 
     // Update Transaction
     await transaction.update({ status: 'completed' });
+    console.log('[/payments/verify] Transaction marked completed:', {
+      id: transaction.id,
+      txRef,
+      subscriptionsCount: subscriptionsCreated.length,
+    });
 
     // Send Success FCM Notification (Non-blocking)
     User.findByPk(req.user.id).then(user => {
